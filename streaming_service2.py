@@ -60,7 +60,7 @@ class Comment(db.Model):
 with app.app_context():
     db.create_all()
 
-# === Theme & Helpers ===
+# === Helpers ===
 THEME_CSS = {
     "light": {
         "bg": "#ffffff",
@@ -126,18 +126,20 @@ def user_channel_name(user_id):
         return user.channel.name
     return user.email
 
-# === Theme route ===
+# --- Theme route ---
 @app.route('/set_theme/<name>')
 def set_theme(name):
     if name not in THEME_CSS:
         name = 'light'
     session['theme'] = name
+    # return to previous page if possible
     ref = request.referrer or url_for('index')
     return redirect(ref)
 
 # === Routes ===
 @app.route('/')
 def index():
+    # Homepage: show recent videos across channels (front page)
     videos = Video.query.order_by(Video.uploaded_at.desc()).limit(50).all()
     theme_block = theme_style_block()
     user_id = session.get('user_id')
@@ -155,6 +157,7 @@ def index():
         </div>
       </div>
     """
+
     html = theme_block + topbar + "<h1>Recent Videos</h1>"
     if not videos:
         html += "<p>No videos yet.</p>"
@@ -168,7 +171,7 @@ def index():
             html += "</div>"
     return html
 
-# === Create Account ===
+# --- Create Account ---
 @app.route('/create_account', methods=['GET', 'POST'])
 def create_account():
     theme_block = theme_style_block()
@@ -204,7 +207,7 @@ def create_account():
         </div>
     ''')
 
-# === Login ===
+# --- Login ---
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     theme_block = theme_style_block()
@@ -241,13 +244,13 @@ def login():
         </div>
     ''')
 
-# === Logout ===
+# --- Logout ---
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect(url_for('login'))
 
-# === Create Channel ===
+# --- Create Channel ---
 @app.route('/create_channel', methods=['GET', 'POST'])
 def create_channel():
     theme_block = theme_style_block()
@@ -257,6 +260,7 @@ def create_channel():
     user = User.query.get(user_id)
     if user.channel:
         return redirect(url_for('channel_page', channel_id=user.channel.id))
+
     if request.method == 'POST':
         name = request.form['name']
         file = request.files.get('icon')
@@ -273,6 +277,7 @@ def create_channel():
         db.session.add(channel)
         db.session.commit()
         return redirect(url_for('channel_page', channel_id=channel.id))
+
     return theme_block + render_template_string('''
         <div class='topbar'>
           <strong>H Kingdom</strong>
@@ -293,7 +298,7 @@ def create_channel():
         </div>
     ''')
 
-# === List all channels ===
+# --- List all channels ---
 @app.route("/channels")
 def list_channels():
     theme_block = theme_style_block()
@@ -320,7 +325,7 @@ def list_channels():
     html += "</ul>"
     return html
 
-# === Serve uploads & videos ===
+# --- Serve uploads & videos ---
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
@@ -329,7 +334,7 @@ def uploaded_file(filename):
 def uploaded_video(filename):
     return send_from_directory(app.config['VIDEO_FOLDER'], filename)
 
-# === Upload Video ===
+# --- Upload Video (only to your own channel) ---
 @app.route('/upload_video', methods=['GET', 'POST'])
 def upload_video():
     theme_block = theme_style_block()
@@ -339,6 +344,7 @@ def upload_video():
     user = User.query.get(user_id)
     if not user.channel:
         return "You must create a channel first! <a href='/create_channel'>Make one here</a>"
+
     if request.method == 'POST':
         title = request.form['title']
         file = request.files.get('video')
@@ -351,6 +357,7 @@ def upload_video():
         db.session.add(video)
         db.session.commit()
         return redirect(url_for('channel_page', channel_id=user.channel.id))
+
     return theme_block + render_template_string('''
         <div class='topbar'>
           <strong>H Kingdom</strong>
@@ -398,7 +405,7 @@ def dislike_video(video_id):
     db.session.commit()
     return redirect(url_for('channel_page', channel_id=Video.query.get(video_id).channel_id))
 
-# === Comments ===
+# --- Comments: add, edit, delete ---
 @app.route("/video/<int:video_id>/comment", methods=["POST"])
 def comment_video(video_id):
     user_id = session.get('user_id')
@@ -418,6 +425,7 @@ def edit_comment(comment_id):
         return redirect(url_for('login'))
     if c.user_id != user_id:
         return "You are not allowed to edit this comment.", 403
+
     if request.method == 'POST':
         content = request.form.get('content','').strip()
         if content:
@@ -425,6 +433,8 @@ def edit_comment(comment_id):
             c.updated_at = datetime.datetime.utcnow()
             db.session.commit()
         return redirect(url_for('channel_page', channel_id=Video.query.get(c.video_id).channel_id))
+
+    # GET => show edit form
     theme_block = theme_style_block()
     return theme_block + render_template_string('''
         <div class='topbar'>
@@ -458,12 +468,12 @@ def delete_comment(comment_id):
     db.session.commit()
     return redirect(url_for('channel_page', channel_id=vid_channel))
 
-# === Channel Page ===
+# --- Channel Page (videos, likes, comments) ---
 @app.route("/channel/<int:channel_id>")
 def channel_page(channel_id):
     theme_block = theme_style_block()
     c = Channel.query.get_or_404(channel_id)
-    html = theme_block + f"""
+    html = theme_block + """
       <div class='topbar'>
         <strong>H Kingdom</strong>
         <a class='btn' href='/channels'>Channels</a>
@@ -474,10 +484,12 @@ def channel_page(channel_id):
           <a class='btn' href='/set_theme/cyan'>Cyan</a>
         </div>
       </div>
-      <h1>{c.name}</h1>
-    """
+      <h1>{name}</h1>
+    """.format(name=c.name)
+
     if c.icon:
         html += f"<img src='/uploads/{c.icon}' width='150' height='150'><br>"
+
     html += "<h2>Videos</h2>"
     if not c.videos:
         html += "<p>No videos yet!</p>"
@@ -486,12 +498,15 @@ def channel_page(channel_id):
             likes = LikeDislike.query.filter_by(video_id=v.id, value=1).count()
             dislikes = LikeDislike.query.filter_by(video_id=v.id, value=-1).count()
             comments = Comment.query.filter_by(video_id=v.id).order_by(Comment.created_at.asc()).all()
+
             html += "<div class='panel' style='margin-bottom:18px;'>"
             html += f"<h3>{v.title}</h3>"
             html += f"<small style='color:var(--muted)'>Uploaded: {v.uploaded_at.strftime('%Y-%m-%d %H:%M:%S')}</small><br>"
             html += f"<video width='480' controls><source src='/videos/{v.filename}' type='video/mp4'>Your browser does not support the video tag.</video><br>"
             html += f"<a class='btn' href='/video/{v.id}/like'>👍 Like ({likes})</a> "
             html += f"<a class='btn' href='/video/{v.id}/dislike'>👎 Dislike ({dislikes})</a>"
+
+            # Comment form (only logged-in users)
             user_id = session.get('user_id')
             html += "<h4>Comments</h4>"
             if user_id:
@@ -503,6 +518,7 @@ def channel_page(channel_id):
                 """
             else:
                 html += "<p><a href='/login'>Login</a> to comment.</p>"
+
             if not comments:
                 html += "<p>No comments yet!</p>"
             else:
@@ -512,6 +528,8 @@ def channel_page(channel_id):
                     html += "<div style='border-top:1px solid var(--muted); padding-top:6px; margin-top:6px;'>"
                     html += f"<b>{author_name}</b> <small style='color:var(--muted)'>{com.created_at.strftime('%Y-%m-%d %H:%M:%S')}{(' (edited '+com.updated_at.strftime('%Y-%m-%d %H:%M:%S')+')') if com.updated_at else ''}</small>"
                     html += f"<p>{com.content}</p>"
+
+                    # edit/delete buttons if current user is comment owner
                     if user_id and com.user_id == user_id:
                         html += f"""
                         <form style='display:inline' method='get' action='/comment/{com.id}/edit'>
@@ -522,15 +540,20 @@ def channel_page(channel_id):
                         </form>
                         """
                     html += "</div>"
+
             html += "</div>"
+
+    # If viewer is channel owner, show upload link
     user_id = session.get('user_id')
     if user_id:
         user = User.query.get(user_id)
         if user and user.channel and user.channel.id == channel_id:
             html += "<br><a class='btn' href='/upload_video'>Upload a Video</a>"
+
     html += " | <a class='btn' href='/channels'>Back to Channels</a>"
     return html
 
-# === Run App ===
+# --- Run App ---
 if __name__ == '__main__':
     app.run(debug=True)
+
